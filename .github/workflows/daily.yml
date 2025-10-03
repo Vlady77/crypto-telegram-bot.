@@ -1,8 +1,8 @@
 name: Telegram Daily
+
 on:
- on:
   schedule:
-    - cron: "0 7,16 * * *"   # 07:00 + 16:00 UTC = 09:00 + 18:00 Prague/Vienna
+    - cron: "0 7,16 * * *"  # 07:00 + 16:00 UTC = 09:00 + 18:00 Prague/Vienna
   workflow_dispatch: {}
 
 jobs:
@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install deps
-        run: python -m pip install requests
+        run: python -m pip install requests pytz
       - name: Run daily.py
         run: python daily.py
         env:
