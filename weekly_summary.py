@@ -5,7 +5,7 @@ TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT  = os.environ["TELEGRAM_CHAT_ID"]
 TG    = f"https://api.telegram.org/bot{TOKEN}"
 
-# ------------- Helpers -------------
+# ---------- Helpers ----------
 def fmt_usd(x):
     if x is None: return "—"
     return f"${x:,.0f}" if x >= 1000 else f"${x:,.2f}"
@@ -29,17 +29,18 @@ def tg_send(text):
     print("Telegram:", r.status_code, r.text[:200])
     r.raise_for_status()
 
-# ------------- Data fetchers -------------
+# ---------- Data fetch ----------
 def coingecko(url, **params):
     r = requests.get(f"https://api.coingecko.com/api/v3/{url}", params=params, timeout=25)
     r.raise_for_status()
     return r.json()
 
-def get_btc_eth_7d():
+def get_prices_7d():
+    ids = "bitcoin,ethereum,solana,ripple"
     data = coingecko(
         "coins/markets",
         vs_currency="usd",
-        ids="bitcoin,ethereum",
+        ids=ids,
         price_change_percentage="7d",
     )
     out = {}
@@ -66,7 +67,6 @@ def get_fng():
         return None, None
 
 def top_movers_7d():
-    # top by 7d % among top-cap coins, stables excluded
     stables = {"usdt","usdc","dai","tusd","usde","fdusd","eusd"}
     m = coingecko(
         "coins/markets",
@@ -84,19 +84,18 @@ def top_movers_7d():
     loser  = min(filt, key=lambda c: c["price_change_percentage_7d_in_currency"])
     return gainer, loser
 
-# ------------- Build message -------------
+# ---------- Build message ----------
 def build_message():
     tz = pytz.timezone("Europe/Prague")
     now = datetime.now(tz)
     start = (now - timedelta(days=7)).strftime("%d %b")
     end   = now.strftime("%d %b %Y")
 
-    btceth = get_btc_eth_7d()
+    majors = get_prices_7d()
     glob   = get_global()
     fng_v, fng_c = get_fng()
     gainer, loser = top_movers_7d()
 
-    # Header
     lines = [
         f"<b>#Weekly Summary</b>",
         f"<code>{start} → {end}</code>",
@@ -106,18 +105,18 @@ def build_message():
         f"🟠 BTC dominance: <b>{glob['btc_dom']:.2f}%</b>",
         "",
         "<b>Majors (7d)</b>",
-        f"🥇 BTC: <b>{fmt_usd(btceth['BTC']['price'])}</b> ({fmt_pct(btceth['BTC']['pct7d'])})",
-        f"🥈 ETH: <b>{fmt_usd(btceth['ETH']['price'])}</b> ({fmt_pct(btceth['ETH']['pct7d'])})",
+        f"🥇 BTC: <b>{fmt_usd(majors['BTC']['price'])}</b> ({fmt_pct(majors['BTC']['pct7d'])})",
+        f"🥈 ETH: <b>{fmt_usd(majors['ETH']['price'])}</b> ({fmt_pct(majors['ETH']['pct7d'])})",
+        f"🌊 SOL: <b>{fmt_usd(majors['SOL']['price'])}</b> ({fmt_pct(majors['SOL']['pct7d'])})",
+        f"🐬 XRP: <b>{fmt_usd(majors['XRP']['price'])}</b> ({fmt_pct(majors['XRP']['pct7d'])})",
     ]
 
-    # Fear & Greed
     lines.append("")
     if fng_v is not None:
         lines.append(f"🧠 Fear & Greed Index: <b>{fng_v}</b> (“{fng_c}”)")
     else:
         lines.append("🧠 Fear & Greed Index: —")
 
-    # Movers
     if gainer and loser:
         lines += [
             "",
@@ -128,7 +127,6 @@ def build_message():
             f"<b>{loser['price_change_percentage_7d_in_currency']:.2f}%</b>",
         ]
 
-    # Footer
     lines += [
         "",
         "<i>—",
