@@ -36,7 +36,7 @@ def coingecko(url, **params):
     return r.json()
 
 def get_prices_7d():
-    ids = "bitcoin,ethereum,solana,ripple"
+    ids = "bitcoin,ethereum,ripple,binancecoin,solana"
     data = coingecko(
         "coins/markets",
         vs_currency="usd",
@@ -105,10 +105,11 @@ def build_message():
         f"🟠 BTC dominance: <b>{glob['btc_dom']:.2f}%</b>",
         "",
         "<b>Majors (7d)</b>",
-        f"🥇 BTC: <b>{fmt_usd(majors['BTC']['price'])}</b> ({fmt_pct(majors['BTC']['pct7d'])})",
-        f"🥈 ETH: <b>{fmt_usd(majors['ETH']['price'])}</b> ({fmt_pct(majors['ETH']['pct7d'])})",
-        f"🌊 SOL: <b>{fmt_usd(majors['SOL']['price'])}</b> ({fmt_pct(majors['SOL']['pct7d'])})",
-        f"🐬 XRP: <b>{fmt_usd(majors['XRP']['price'])}</b> ({fmt_pct(majors['XRP']['pct7d'])})",
+        f"🥇 Bitcoin (BTC): <b>{fmt_usd(majors['BTC']['price'])}</b> ({fmt_pct(majors['BTC']['pct7d'])})",
+        f"🥈 Ethereum (ETH): <b>{fmt_usd(majors['ETH']['price'])}</b> ({fmt_pct(majors['ETH']['pct7d'])})",
+        f"🐬 XRP (XRP): <b>{fmt_usd(majors['XRP']['price'])}</b> ({fmt_pct(majors['XRP']['pct7d'])})",
+        f"🥉 BNB (BNB): <b>{fmt_usd(majors['BNB']['price'])}</b> ({fmt_pct(majors['BNB']['pct7d'])})",
+        f"🌚 Solana (SOL): <b>{fmt_usd(majors['SOL']['price'])}</b> ({fmt_pct(majors['SOL']['pct7d'])})",
     ]
 
     lines.append("")
