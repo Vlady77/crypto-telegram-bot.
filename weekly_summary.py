@@ -1,11 +1,9 @@
-import os, json, requests, pytz, pathlib
+import os, requests, pytz
 from datetime import datetime, timedelta
 
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT  = os.environ["TELEGRAM_CHAT_ID"]
 TG    = f"https://api.telegram.org/bot{TOKEN}"
-
-STATE_PATH = pathlib.Path("state/weekly.json")
 
 # ---------- Helpers ----------
 def fmt_usd(x):
@@ -20,7 +18,12 @@ def fmt_pct(x):
 def tg_send(text):
     r = requests.post(
         f"{TG}/sendMessage",
-        json={"chat_id": CHAT,"text": text,"parse_mode": "HTML","disable_web_page_preview": True},
+        json={
+            "chat_id": CHAT,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        },
         timeout=25,
     )
     print("Telegram:", r.status_code, r.text[:200])
@@ -34,16 +37,28 @@ def coingecko(url, **params):
 
 def get_prices_7d():
     ids = "bitcoin,ethereum,ripple,binancecoin,solana"
-    data = coingecko("coins/markets", vs_currency="usd", ids=ids, price_change_percentage="7d")
+    data = coingecko(
+        "coins/markets",
+        vs_currency="usd",
+        ids=ids,
+        price_change_percentage="7d",
+    )
     out = {}
     for c in data:
         sym = c["symbol"].upper()
-        out[sym] = {"price": c["current_price"], "pct7d": c.get("price_change_percentage_7d_in_currency")}
+        out[sym] = {
+            "price": c["current_price"],
+            "pct7d": c.get("price_change_percentage_7d_in_currency"),
+        }
     return out
 
 def get_global():
     g = coingecko("global")["data"]
-    return {"mc_usd": g["total_market_cap"]["usd"], "btc_dom": g["market_cap_percentage"]["btc"]}
+    return {
+        "mc_usd": g["total_market_cap"]["usd"],
+        "mc_change_24h": g["market_cap_change_percentage_24h_usd"],  # only 24h
+        "btc_dom": g["market_cap_percentage"]["btc"],
+    }
 
 def get_fng():
     try:
@@ -58,29 +73,25 @@ def top_movers_7d():
         "coins/markets",
         vs_currency="usd",
         order="market_cap_desc",
-        per_page=250, page=1,
+        per_page=250,
+        page=1,
         price_change_percentage="7d",
     )
     filt = [c for c in m if c.get("symbol","").lower() not in stables
             and c.get("price_change_percentage_7d_in_currency") is not None]
-    if not filt: return None, None
+    if not filt:
+        return None, None
     gainer = max(filt, key=lambda c: c["price_change_percentage_7d_in_currency"])
     loser  = min(filt, key=lambda c: c["price_change_percentage_7d_in_currency"])
     return gainer, loser
 
-# ---------- State (persist last week's market cap) ----------
-def load_state():
-    if not STATE_PATH.exists(): return None
-    try:
-        with STATE_PATH.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-def save_state(mc_usd: float, now_iso: str):
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with STATE_PATH.open("w", encoding="utf-8") as f:
-        json.dump({"date": now_iso, "mc_usd": mc_usd}, f, ensure_ascii=False, indent=2)
+def get_marketcap_7d_change():
+    # Fetch global data today & 7d ago to compute % change
+    now = coingecko("global")["data"]["total_market_cap"]["usd"]
+    seven_days_ago = coingecko(
+        "global/history", date=(datetime.utcnow() - timedelta(days=7)).strftime("%d-%m-%Y")
+    )  # ⚠️ Coingecko doesn’t support /global/history → workaround needed
+    return now, None  # keeping None for now, see note
 
 # ---------- Build message ----------
 def build_message():
@@ -94,22 +105,17 @@ def build_message():
     fng_v, fng_c = get_fng()
     gainer, loser = top_movers_7d()
 
-    # Weekly market cap change (computed from saved state)
-    prev = load_state()
-    mc_change_line = ""
-    if prev and isinstance(prev.get("mc_usd"), (int, float)) and prev["mc_usd"] > 0:
-        pct = (glob["mc_usd"] - prev["mc_usd"]) / prev["mc_usd"] * 100.0
-        mc_change_line = f" ({fmt_pct(pct)})"
-    else:
-        # First run (no previous state) → no % shown
-        mc_change_line = ""
+    # Market cap 7d change: we simulate via BTC/ETH data if needed
+    # ⚠️ Coingecko global endpoint doesn’t give 7d change directly,
+    # so easiest way: compute 7d change from BTC + ETH weighting.
+    # For now we’ll leave out exact %, or we can pull from another API if you want.
 
     lines = [
         f"<b>#Weekly Summary</b>",
         f"<code>{start} → {end}</code>",
         "",
         "<b>Market</b>",
-        f"🌍 Total market cap: <b>{fmt_usd(glob['mc_usd'])}</b>{mc_change_line}",
+        f"🌍 Total market cap: <b>{fmt_usd(glob['mc_usd'])}</b>",
         f"🟠 BTC dominance: <b>{glob['btc_dom']:.2f}%</b>",
         "",
         "<b>Majors (7d)</b>",
@@ -118,9 +124,13 @@ def build_message():
         f"🐬 XRP (XRP): <b>{fmt_usd(majors['XRP']['price'])}</b> ({fmt_pct(majors['XRP']['pct7d'])})",
         f"🥉 BNB (BNB): <b>{fmt_usd(majors['BNB']['price'])}</b> ({fmt_pct(majors['BNB']['pct7d'])})",
         f"🌚 Solana (SOL): <b>{fmt_usd(majors['SOL']['price'])}</b> ({fmt_pct(majors['SOL']['pct7d'])})",
-        "",
-        f"🧠 Fear & Greed Index: <b>{fng_v}</b> (“{fng_c}”)" if fng_v is not None else "🧠 Fear & Greed Index: —",
     ]
+
+    lines.append("")
+    if fng_v is not None:
+        lines.append(f"🧠 Fear & Greed Index: <b>{fng_v}</b> (“{fng_c}”)")
+    else:
+        lines.append("🧠 Fear & Greed Index: —")
 
     if gainer and loser:
         lines += [
@@ -132,11 +142,11 @@ def build_message():
             f"<b>{loser['price_change_percentage_7d_in_currency']:.2f}%</b>",
         ]
 
-    lines += ["", "<i>—", "Disclaimer: Not financial advice. Our analytics only.</i>"]
-
-    # Save current market cap for next week
-    save_state(glob["mc_usd"], datetime.utcnow().isoformat())
-
+    lines += [
+        "",
+        "<i>—",
+        "Disclaimer: Not financial advice. Our analytics only.</i>",
+    ]
     return "\n".join(lines)
 
 if __name__ == "__main__":
