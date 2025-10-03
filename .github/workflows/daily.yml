@@ -1,4 +1,4 @@
-name: Telegram Smoke Test
+name: Telegram Debug
 on:
   workflow_dispatch: {}
 
@@ -6,18 +6,42 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - name: Send test message
+      - name: Check env present
+        run: |
+          python - <<'PY'
+          import os, sys
+          t = os.environ.get("TELEGRAM_BOT_TOKEN")
+          c = os.environ.get("TELEGRAM_CHAT_ID")
+          if not t: raise SystemExit("❌ TELEGRAM_BOT_TOKEN missing")
+          if not c: raise SystemExit("❌ TELEGRAM_CHAT_ID missing")
+          print("✅ Secrets loaded")
+          PY
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+      - name: Call getMe (validates token)
         run: |
           python - <<'PY'
           import os, requests
-          token = os.environ["TELEGRAM_BOT_TOKEN"]
-          chat  = os.environ["TELEGRAM_CHAT_ID"]
-          r = requests.post(
-              f"https://api.telegram.org/bot{token}/sendMessage",
-              data={"chat_id": chat, "text": "Action test ✅ from GitHub"},
-              timeout=20
-          )
-          print("HTTP", r.status_code); print(r.text)
+          t = os.environ["TELEGRAM_BOT_TOKEN"]
+          r = requests.get(f"https://api.telegram.org/bot{t}/getMe", timeout=20)
+          print("getMe ->", r.status_code, r.text)
+          r.raise_for_status()
+          PY
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+
+      - name: Send test message (validates chat id + rights)
+        run: |
+          python - <<'PY'
+          import os, requests
+          t = os.environ["TELEGRAM_BOT_TOKEN"]
+          c = os.environ["TELEGRAM_CHAT_ID"]
+          r = requests.post(f"https://api.telegram.org/bot{t}/sendMessage",
+                            data={"chat_id": c, "text": "GitHub Actions ✅ debug message"},
+                            timeout=20)
+          print("sendMessage ->", r.status_code, r.text)
           r.raise_for_status()
           PY
         env:
