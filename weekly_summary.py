@@ -56,6 +56,7 @@ def get_global():
     g = coingecko("global")["data"]
     return {
         "mc_usd": g["total_market_cap"]["usd"],
+        "mc_change_24h": g["market_cap_change_percentage_24h_usd"],  # only 24h
         "btc_dom": g["market_cap_percentage"]["btc"],
     }
 
@@ -84,6 +85,14 @@ def top_movers_7d():
     loser  = min(filt, key=lambda c: c["price_change_percentage_7d_in_currency"])
     return gainer, loser
 
+def get_marketcap_7d_change():
+    # Fetch global data today & 7d ago to compute % change
+    now = coingecko("global")["data"]["total_market_cap"]["usd"]
+    seven_days_ago = coingecko(
+        "global/history", date=(datetime.utcnow() - timedelta(days=7)).strftime("%d-%m-%Y")
+    )  # ⚠️ Coingecko doesn’t support /global/history → workaround needed
+    return now, None  # keeping None for now, see note
+
 # ---------- Build message ----------
 def build_message():
     tz = pytz.timezone("Europe/Prague")
@@ -95,6 +104,11 @@ def build_message():
     glob   = get_global()
     fng_v, fng_c = get_fng()
     gainer, loser = top_movers_7d()
+
+    # Market cap 7d change: we simulate via BTC/ETH data if needed
+    # ⚠️ Coingecko global endpoint doesn’t give 7d change directly,
+    # so easiest way: compute 7d change from BTC + ETH weighting.
+    # For now we’ll leave out exact %, or we can pull from another API if you want.
 
     lines = [
         f"<b>#Weekly Summary</b>",
