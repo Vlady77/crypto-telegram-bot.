@@ -2,14 +2,19 @@ name: Weekly Summary
 
 on:
   schedule:
-    - cron: "0 16 * * SUN"   # 16:00 UTC = 18:00 Europe/Prague
+    - cron: "0 16 * * SUN"   # 16:00 UTC = 18:00 Europe/Prague (Sunday)
   workflow_dispatch: {}
+
+permissions:
+  contents: write   # allow this workflow to push the updated state file
 
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -20,3 +25,14 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+      - name: Commit weekly state
+        run: |
+          if git status --porcelain | grep -q "state/weekly.json"; then
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git add state/weekly.json
+            git commit -m "Update weekly market cap state"
+            git push
+          else
+            echo "No state changes to commit."
+          fi
