@@ -13,10 +13,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-     - name: Install deps
-  run: python -m pip install requests pytz feedparser
+      - name: Install deps
+        run: python -m pip install requests pytz feedparser
       - name: Run daily.py
         run: python daily.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
