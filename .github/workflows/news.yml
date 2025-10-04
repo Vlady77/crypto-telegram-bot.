@@ -2,7 +2,7 @@ name: Telegram News
 
 on:
   schedule:
-    # 12:00 & 20:00 Prague (CEST) = 10:00 & 18:00 UTC
+    # 12:00 & 20:00 Prague (CEST = UTC+2)
     - cron: "0 10,18 * * *"
   workflow_dispatch: {}
 
