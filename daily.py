@@ -1,110 +1,61 @@
 import os
-import time
 import requests
-import feedparser
-import pytz
-from datetime import datetime
-from urllib.parse import urlparse, urlunparse, parse_qsl
 
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-CHAT  = os.environ["TELEGRAM_CHAT_ID"]
-TG    = f"https://api.telegram.org/bot{TOKEN}"
+CHAT = os.environ["TELEGRAM_CHAT_ID"]
+TG = f"https://api.telegram.org/bot{TOKEN}"
 
-# === RSS-Quellen (frei erweiterbar) ===
-FEEDS = [
-    "https://www.coindesk.com/arc/outboundfeeds/rss/",
-    "https://cointelegraph.com/rss",
-    "https://decrypt.co/feed",
-    "https://www.theblock.co/rss",
-]
-MAX_ITEMS = 6  # wie viele Headlines posten
+def cg(endpoint, **params):
+    r = requests.get(f"https://api.coingecko.com/api/v3/{endpoint}", params=params, timeout=20)
+    r.raise_for_status()
+    return r.json()
 
-# ---------- Utils ----------
-def escape_html(s: str) -> str:
-    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+def fmt_usd(x):
+    return f"${x:,.0f}" if x >= 1000 else f"${x:,.2f}"
 
-def clean_link(u: str) -> str:
-    """Entfernt UTM/Tracking-Parameter, behält https://host/path bei."""
+def build():
+    ids = ["bitcoin", "ethereum", "ripple", "binancecoin", "solana", "tether"]
+    p = cg("simple/price", ids=",".join(ids), vs_currencies="usd,eur")
+    g = cg("global")["data"]
+    mc = g["total_market_cap"]["usd"]
+    dom = g["market_cap_percentage"]["btc"]
+
     try:
-        p = urlparse(u)
-        keep = [(k, v) for k, v in parse_qsl(p.query, keep_blank_values=True)
-                if not k.lower().startswith(("utm_", "ref", "ref_"))]
-        q = "&".join(f"{k}={v}" for k, v in keep) if keep else ""
-        return urlunparse((p.scheme, p.netloc, p.path, "", q, ""))
+        f = requests.get("https://api.alternative.me/fng/?limit=1", timeout=15).json()["data"][0]
+        fng_v, fng_c = int(f["value"]), f["value_classification"]
     except Exception:
-        return u
+        fng_v, fng_c = None, None
 
-def domain(u: str) -> str:
-    try:
-        return urlparse(u).netloc.replace("www.", "") or "source"
-    except Exception:
-        return "source"
+    m = cg("coins/markets", vs_currency="usd", order="market_cap_desc", per_page=100, page=1)
+    stables = {"usdt","usdc","dai","tusd","usde","fdusd","eurt"}
+    filt = [c for c in m if c["symbol"].lower() not in stables and c.get("price_change_percentage_24h") is not None]
+    gainer = max(filt, key=lambda c: c["price_change_percentage_24h"])
+    loser = min(filt, key=lambda c: c["price_change_percentage_24h"])
 
-# ---------- Fetch & Build ----------
-def fetch_news():
-    items = []
-    for url in FEEDS:
-        try:
-            feed = feedparser.parse(url)
-            for e in feed.entries:
-                title = (getattr(e, "title", "") or "").strip()
-                link  = (getattr(e, "link", "") or "").strip()
-                if not title or not link:
-                    continue
-                ts = 0
-                for key in ("published_parsed", "updated_parsed"):
-                    if getattr(e, key, None):
-                        ts = time.mktime(getattr(e, key))
-                        break
-                items.append({"title": title, "link": link, "ts": ts, "src": domain(link)})
-        except Exception as ex:
-            print("Feed error:", url, ex)
+    lines = []
+    lines.append("#Daily\nCryptocurrency prices this morning:\n")
+    lines.append(f"🥇 Bitcoin (BTC): {fmt_usd(p['bitcoin']['usd'])}")
+    lines.append(f"🥈 Ethereum (ETH): {fmt_usd(p['ethereum']['usd'])}")
+    lines.append(f"🐬 XRP (XRP): {fmt_usd(p['ripple']['usd'])}")
+    lines.append(f"🥉 BNB (BNB): {fmt_usd(p['binancecoin']['usd'])}")
+    lines.append(f"🌚 Solana (SOL): {fmt_usd(p['solana']['usd'])}")
+    lines.append(f"💲 Tether (USDT): {fmt_usd(p['tether']['eur'])} EUR")
 
-    # Dedupe nach Link & sortieren
-    seen, uniq = set(), []
-    for it in items:
-        if it["link"] in seen:
-            continue
-        seen.add(it["link"])
-        uniq.append(it)
-    uniq.sort(key=lambda x: x["ts"], reverse=True)
-    return uniq[:MAX_ITEMS]
+    lines.append(f"\n▫️ Total crypto market capitalization: {fmt_usd(mc)}")
+    lines.append(f"▫️ Bitcoin dominance: {dom:.2f}%")
+    if fng_v:
+        lines.append(f"▫️ Fear & Greed Index: {fng_v} (“{fng_c}”)")
 
-def build_message():
-    tz = pytz.timezone("Europe/Prague")
-    now = datetime.now(tz).strftime("%H:%M")
-    headlines = fetch_news()
+    lines.append(f"\n📈 Top gainer (24h): {gainer['name']} ({gainer['symbol'].upper()}) {gainer['price_change_percentage_24h']:.2f}%")
+    lines.append(f"📉 Top loser (24h): {loser['name']} ({loser['symbol'].upper()}) {loser['price_change_percentage_24h']:.2f}%")
 
-    lines = [f"<b>#News</b>\nTop crypto headlines <code>{now}</code>:\n"]
-
-    if not headlines:
-        lines.append("• No fresh headlines right now. Check back later.")
-    else:
-        for i, it in enumerate(headlines, 1):
-            title = escape_html(it["title"])
-            if len(title) > 140:
-                title = title[:137] + "…"
-            link = clean_link(it["link"])
-            src  = escape_html(it["src"])
-            lines.append(f"{i}. <a href=\"{link}\">{title}</a>  <code>{src}</code>")
-
-    lines.append("\n<i>—\nDisclaimer: Not financial advice. Our analytics only.</i>")
+    lines.append("\n—\nDisclaimer: Not financial advice. Our analytics only.")
     return "\n".join(lines)
 
-# ---------- Send ----------
-def send(text: str):
-    r = requests.post(
-        f"{TG}/sendMessage",
-        data={
-            "chat_id": CHAT,
-            "text": text,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-        },
-        timeout=25,
-    )
-    print("Telegram status:", r.status_code, r.text[:200])
+def send(text):
+    r = requests.post(f"{TG}/sendMessage", data={"chat_id": CHAT, "text": text, "disable_web_page_preview": True})
     r.raise_for_status()
+    print("Telegram response:", r.text)
 
 if __name__ == "__main__":
-    send(build_message())
+    send(build())
