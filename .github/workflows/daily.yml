@@ -13,8 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install deps
-        run: python -m pip install requests pytz
+     - name: Install deps
+  run: python -m pip install requests pytz feedparser
       - name: Run daily.py
         run: python daily.py
         env:
