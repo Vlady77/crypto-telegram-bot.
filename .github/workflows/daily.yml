@@ -1,18 +1,32 @@
-name: Telegram Daily
+name: Telegram Prices
+
 on:
   schedule:
-    - cron: "0 7,16 * * *"      # 07:00 + 16:00 UTC = 09:00 + 18:00 Prague
+    # 09:00 & 18:00 Prague (CEST = UTC+2) → 07:00 & 16:00 UTC
+    - cron: "0 7,16 * * *"
   workflow_dispatch: {}
+
+# optional but nice: avoid two runs at the same time if a manual run overlaps
+concurrency:
+  group: prices-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - name: Install deps
-        run: python -m pip install requests pytz feedparser   # ok to keep feedparser
+        run: |
+          python -m pip install --upgrade pip
+          # only what daily.py needs
+          python -m pip install requests pytz
+
       - name: Run daily.py
         run: python daily.py
         env:
