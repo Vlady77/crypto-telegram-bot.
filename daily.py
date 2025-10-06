@@ -74,7 +74,7 @@ def build_message():
     # --- Text ---
     lines = []
     lines.append("#Daily")
-    lines.append(f"Cryptocurrency prices {part}:\n")
+    lines.append(f"Cryptocurrency prices {part} ({now.strftime('%H:%M')}):\n")
 
     lines.append(f"🥇 Bitcoin (BTC): {fmt_usd(prices['bitcoin']['usd'])}")
     lines.append(f"🥈 Ethereum (ETH): {fmt_usd(prices['ethereum']['usd'])}")
